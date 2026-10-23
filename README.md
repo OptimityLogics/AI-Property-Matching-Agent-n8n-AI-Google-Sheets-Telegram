@@ -95,16 +95,11 @@ The exact execution order depends on the connected nodes and branch configuratio
 ```text
 .
 ├── README.md
-├── setUp/
-│   └── setupguide.md
-└── workflow/
-    └── README.md
+└── setUp/
+    └── setupguide.md
 ```
 
 - **[Setup guide](setUp/setupguide.md)** — service setup, credentials, configuration, testing, and troubleshooting.
-- **[Workflow documentation](workflow/README.md)** — guidance for preparing and storing a sanitized n8n workflow export.
-
-The importable workflow JSON is **not currently included** in this repository. Once it is sanitized and validated, it can be added under `workflow/ai-property-matching-agent.json`.
 
 ## Getting Started
 
@@ -125,7 +120,7 @@ Before configuring the automation, prepare:
 2. Configure each service and create credentials in n8n.
 3. Prepare the Google Sheets columns required by the workflow.
 4. Confirm the Apify actor's input parameters and output schema.
-5. Add or import the sanitized workflow JSON once it is available in the repository.
+5. Import the sanitized workflow JSON from the repository when setting up the automation.
 6. Test each branch with sample data before activating the workflow.
 
 Do not activate the workflow for real buyers until the credentials, expressions, data mappings, error paths, and privacy requirements have been checked.
