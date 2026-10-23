@@ -1,0 +1,735 @@
+{
+  "name": "AI Property Matching Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "8501759c-6342-474f-820a-217ec62c97f4",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        3792,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: \"Extract real-estate requirements. Return JSON keys: buyer_name, phone, email, city, localities, budget_min_inr, budget_max_inr, bhk, min_area_sqft, amenities, possession, property_type. Convert lakh/crore to INR. Do not invent values.\" }] }, contents: [{ role: 'user', parts: [{ text: $json.message.text }] }], generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "eaabae22-27fb-4de0-bcf2-82588dcda573",
+      "name": "Gemini: Extract Requirements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet parsed = {};\ntry { parsed = JSON.parse(raw.candidates?.[0]?.content?.parts?.[0]?.text || '{}'); } catch {}\nconst tg = $('Telegram Trigger').first().json;\nconst msg = tg.message || {};\nconst req = { ...parsed, city: parsed.city || 'Ahmedabad', localities: parsed.localities || [], bhk: parsed.bhk || [], amenities: parsed.amenities || [], possession: parsed.possession || 'any', property_type: parsed.property_type || 'any', buyer_name: parsed.buyer_name || msg.from?.first_name || '', chat_id: msg.chat?.id, original_message: msg.text || '' };\nreq.needs_more_info = !(req.budget_max_inr || req.bhk.length || req.localities.length);\nreq.requirement_summary = [req.bhk.length ? req.bhk.join('/') + ' BHK' : '', req.property_type !== 'any' ? req.property_type : 'property', 'in ' + (req.localities.length ? req.localities.join('/') + ', ' : '') + req.city, req.budget_max_inr ? 'under ₹' + Number(req.budget_max_inr).toLocaleString('en-IN') : ''].filter(Boolean).join(' ');\nreturn [{json:req}];"
+      },
+      "id": "903cb10d-8472-441e-9df4-11b1720d7016",
+      "name": "Validate Requirements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "89cc99cc-eada-45c2-ada0-8dddfebb06f2",
+              "leftValue": "={{ $json.needs_more_info }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a7c04ba4-d20c-4872-a1ed-5d4ace387189",
+      "name": "Need More Info?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4448,
+        2192
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "05b95f87-fbcc-460d-8526-8e533cc0ba87",
+              "name": "output",
+              "value": "={{ 'Happy to help you find a property in ' + $json.city + '! Please share your budget, BHK, or preferred locality.' }}",
+              "type": "string"
+            },
+            {
+              "id": "7f4d537e-94ce-48d9-99db-108e4ba3642a",
+              "name": "chat_id",
+              "value": "={{ $json.chat_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d523190a-0a50-4dc1-a462-7c0ec9a34510",
+      "name": "Ask Clarifying Question",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4672,
+        1984
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "41d095b1-0bc8-43d9-b22a-f34afafbb9d7",
+      "name": "Telegram: Ask With Quick Buttons",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4896,
+        1984
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Validate Requirements').first().json.chat_id }}",
+        "text": "={{ 'Got it! Searching listings for: ' + $('Validate Requirements').first().json.requirement_summary }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6fddaa85-58e9-4f48-94e9-84174a2ad383",
+      "name": "Telegram: Searching Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4672,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/haketa~housing-scraper/run-sync-get-dataset-items",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_APIFY_API_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ cities: [ $('Validate Requirements').first().json.city.toLowerCase().trim() ], service: 'buy', maxItems: 100 }) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "bc19d744-17f5-422e-a7ab-5901e1ca655a",
+      "name": "Apify: Fetch Live Listings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5344,
+        2256
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Validate Requirements').first().json;\nconst items = $input.all().map(i => i.json).filter(o => o && !o.error && (o.title || o.priceDisplay || o.priceMin));\nconst wantLoc = (req.localities || []).map(x => String(x).toLowerCase());\nconst out = [];\nfor (const it of items) {\n const blob = JSON.stringify(it).toLowerCase(); const sub = String(it.subtitle || '');\n const nums = /bhk/i.test(sub) ? [...sub.split(/bhk/i)[0].matchAll(/\\d+(?:\\.\\d+)?/g)].map(m => parseFloat(m[0])) : [];\n const bhks = [...new Set(nums.flatMap(n => [Math.floor(n), Math.ceil(n)]))];\n const pmin = Number(it.priceMin) || null; const pmax = Number(it.priceMax) || pmin;\n if (req.bhk.length && !req.bhk.some(b => bhks.includes(b))) continue;\n if (req.budget_max_inr && pmin && pmin > req.budget_max_inr * 1.1) continue;\n if (wantLoc.length && !wantLoc.some(l => blob.includes(l))) continue;\n let score = (!req.budget_max_inr ? 15 : pmax && pmax <= req.budget_max_inr ? 30 : pmin && pmin <= req.budget_max_inr ? 22 : 10) + (wantLoc.length ? 25 : 10) + (req.bhk.length ? 20 : 15) + 10;\n out.push({title:it.title || 'Property',locality:[it.address,it.detailedAddress].filter(Boolean).join(' | '),bhk:sub,price:it.priceDisplay || (pmin ? String(pmin) : ''),property_type:it.propertyType || '',seller:it.sellerName || '',posted:it.postedDate || '',url:it.url || '',verified:!!it.isVerified,score});\n}\nout.sort((a,b)=>b.score-a.score);\nreturn [{json:{req,matches:out.slice(0,5),total_found:out.length,scanned:items.length}}];"
+      },
+      "id": "01a8657a-0075-48bb-8563-85d1d8c7e1a1",
+      "name": "Normalize, Filter & Rank",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5792,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "918b7751-c00d-4d3a-bfa9-fc586a4e95c0",
+              "leftValue": "={{ $json.matches.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "01a9681c-dd8e-42a9-9ce8-0831ce716c57",
+      "name": "Any Matches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6016,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": ""
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: \"You are a property advisor. Return JSON with reply_intro and followup_message. Do not claim availability is confirmed.\" }] }, contents: [{ role: 'user', parts: [{ text: 'REQUIREMENT: ' + JSON.stringify($json.req) + ' MATCHES: ' + JSON.stringify($json.matches) }] }], generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b0604fe9-ae1a-4460-8291-8fceaad3eeee",
+      "name": "Gemini: Explain + Follow-up Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6224,
+        2272
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json; const norm = $('Normalize, Filter & Rank').first().json; const req = norm.req; const matches = norm.matches;\nlet g = {}; try { g = JSON.parse(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}'); } catch {}\nconst cards = matches.map((m,i)=>[(i+1)+'. '+m.title+' (match '+m.score+'/100)',m.locality?'Location: '+m.locality:'',m.price?'Price: '+m.price:'',m.bhk?'Configuration: '+m.bhk:'',m.url?'Link: '+m.url:''].filter(Boolean).join('\\n')).join('\\n\\n');\nconst reply = 'Hello '+(req.buyer_name || '')+'! '+(g.reply_intro || 'Here are the best matches I found.')+'\\n\\nSearched: '+req.requirement_summary+'\\n\\nTop matches:\\n'+cards;\nreturn [{json:{timestamp:new Date().toISOString(),chat_id:req.chat_id,buyer_name:req.buyer_name||'',phone:req.phone||'',email:req.email||'',requirement_text:req.requirement_summary,city:req.city,localities:(req.localities||[]).join(', '),budget_max_inr:req.budget_max_inr||'',bhk:(req.bhk||[]).join('/'),amenities:(req.amenities||[]).join(', '),possession:req.possession,top_matches:matches.map(m=>m.title+' | '+m.price+' | '+m.locality+' | score '+m.score).join(' || '),top_match_urls:matches.map(m=>m.url).join(' , '),followup_draft:g.followup_message||'',status:'New - awaiting sales approval',reply:reply.slice(0,3800)}}];"
+      },
+      "id": "f112638a-d948-4edf-82ba-272100fd28a2",
+      "name": "Prepare Lead Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6448,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "buyer name": "={{ $json.buyer_name }}",
+            "phone": "={{ $json.phone }}",
+            "email": "={{ $json.email }}",
+            "city": "={{ $json.city }}",
+            "localities": "={{ $json.localities }}",
+            "bhk": "={{ $json.bhk }}",
+            "amenities": "={{ $json.amenities }}",
+            "possession": "={{ $json.possession }}",
+            "followup_draft": "={{ $json.followup_draft }}",
+            "status": "={{ $json.status }}",
+            "reply": "={{ $json.reply }}",
+            "requirement text": "={{ $json.requirement_text }}",
+            "budget max inr": "={{ $json.budget_max_inr }}",
+            "top matches": "={{ $json.top_matches }}",
+            "top match urls": "={{ $json.top_match_urls }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "f1e01e05-827a-4c89-851b-eede0edf756c",
+      "name": "Google Sheets: Save Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        6672,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_SALES_EMAIL@example.com",
+        "subject": "={{ 'New property lead (approval needed): ' + ($('Prepare Lead Row').first().json.buyer_name || 'Unknown buyer') }}",
+        "message": "={{ 'Requirement: ' + $('Prepare Lead Row').first().json.requirement_text + '\\n\\nTop matches: ' + $('Prepare Lead Row').first().json.top_matches + '\\n\\nDRAFT FOLLOW-UP (review before sending to buyer):\\n' + $('Prepare Lead Row').first().json.followup_draft }}",
+        "options": {}
+      },
+      "id": "73988233-b2d1-4b18-8fd2-6c5524c08dbc",
+      "name": "Gmail: Notify Sales (Approval)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        6896,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Prepare Lead Row').first().json;\nlet tail = '\\n\\nYour requirement is saved. A sales advisor will confirm availability and arrange site visits.\\nYou can refine anytime, e.g. “make it 2 BHK” or “add gym”. Send “new search” to start over.';\nreturn [{json:{chat_id:lead.chat_id,output:lead.reply+tail}}];"
+      },
+      "id": "56fbe808-9bb7-4326-8ff4-d5b7181ec5bd",
+      "name": "Final Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7104,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "70923d18-42b9-4e9c-9ea1-7a251912f042",
+              "name": "output",
+              "value": "={{ ($json.scanned === 0) ? 'I could not fetch live listings right now. Please try again in a minute.' : ('I scanned ' + $json.scanned + ' listings but none matched. Try raising your budget or adding nearby areas. Searched: ' + $json.req.requirement_summary) }}",
+              "type": "string"
+            },
+            {
+              "id": "c65edbd9-bff1-42e0-ad8c-ae4f27feea0c",
+              "name": "chat_id",
+              "value": "={{ $json.req.chat_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e04058de-a714-4d04-ac23-876f11b8170b",
+      "name": "No Match Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6224,
+        2592
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "c305465f-9b32-4f22-8b4f-c317cf5c9718",
+      "name": "Telegram: Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        7328,
+        2128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{cache_hit:false,key:String($('Validate Requirements').first().json.city||'ahmedabad').toLowerCase().trim()}}];"
+      },
+      "name": "Load Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4896,
+        2352
+      ],
+      "id": "83248d68-d6f5-4479-87c5-6da852114e95"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "9218f386-e501-4e3e-85ec-e04d08b5f57b",
+              "leftValue": "={{ $json.cache_hit }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Cache Hit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5120,
+        2352
+      ],
+      "id": "45aafff4-fa84-4aad-a9cf-87e6144e9466"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "name": "Use Cached Listings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5344,
+        2464
+      ],
+      "id": "9e52d223-8b92-4ee4-8d0a-697513e4f99e"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "name": "Save Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5568,
+        2256
+      ],
+      "id": "a5a5169e-ae14-4b07-8b72-123f20ad2584"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gemini: Extract Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: Extract Requirements": {
+      "main": [
+        [
+          {
+            "node": "Validate Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Requirements": {
+      "main": [
+        [
+          {
+            "node": "Need More Info?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Need More Info?": {
+      "main": [
+        [
+          {
+            "node": "Ask Clarifying Question",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Searching Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Clarifying Question": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Ask With Quick Buttons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Ask With Quick Buttons": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Searching Message": {
+      "main": [
+        [
+          {
+            "node": "Load Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Cache": {
+      "main": [
+        [
+          {
+            "node": "Cache Hit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Hit?": {
+      "main": [
+        [
+          {
+            "node": "Use Cached Listings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apify: Fetch Live Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Cached Listings": {
+      "main": [
+        [
+          {
+            "node": "Normalize, Filter & Rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify: Fetch Live Listings": {
+      "main": [
+        [
+          {
+            "node": "Save Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Cache": {
+      "main": [
+        [
+          {
+            "node": "Normalize, Filter & Rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize, Filter & Rank": {
+      "main": [
+        [
+          {
+            "node": "Any Matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Matches?": {
+      "main": [
+        [
+          {
+            "node": "Gemini: Explain + Follow-up Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Match Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: Explain + Follow-up Draft": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lead Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets: Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets: Save Lead": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Notify Sales (Approval)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Notify Sales (Approval)": {
+      "main": [
+        [
+          {
+            "node": "Final Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Reply": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Match Reply": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "sanitized-export",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
